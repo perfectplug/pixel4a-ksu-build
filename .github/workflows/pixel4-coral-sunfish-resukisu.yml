@@ -147,7 +147,7 @@ jobs:
 
       - name: Setup ReSukiSU
         run: |
-          cd kernel
+          cd kernel/private/msm-google   # msm-google 4.14 源码根（drivers/ 在此，不在 kernel/ 顶层）
 
           echo "=== 集成 ReSukiSU ==="
 
@@ -172,7 +172,7 @@ jobs:
 
       - name: Apply KSU manual hook patches
         run: |
-          cd kernel
+          cd kernel/private/msm-google   # 补丁作用于 msm-google 源码根下的 fs/*.c、kernel/*.c 等
 
           echo "=== 应用 KSU 手动钩子补丁（参考 ReSukiSU 官方文档） ==="
           echo "目标: Linux 4.14 内核"
