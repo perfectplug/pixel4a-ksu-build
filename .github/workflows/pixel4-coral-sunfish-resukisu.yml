@@ -166,6 +166,15 @@ jobs:
             exit 1
           fi
 
+          # === 强制选用 Manual Hook（4.14 非-GKI 不支持默认的 Tracepoint 钩子）===
+          # 钩子方法是 Kconfig choice，默认 KSU_TRACEPOINT_HOOK(仅 GKI2)；仅在 defconfig 追加
+          # CONFIG_KSU_MANUAL_HOOK=y 无法覆盖 choice 默认值 -> 直接改驱动 Kconfig 的 choice 默认为 MANUAL。
+          KC=$(readlink -f drivers/kernelsu)/Kconfig
+          echo "ReSukiSU Kconfig: $KC"
+          sed -i 's/default KSU_TRACEPOINT_HOOK/default KSU_MANUAL_HOOK/' "$KC"
+          echo "--- choice default after patch ---"
+          grep -nE "prompt \"KernelSU Hooking Method\"|default KSU_" "$KC" | head
+
           # 提交更改（避免 dirty 标记）
           git add .
           git commit -m "Add ReSukiSU support" || true
@@ -580,6 +589,8 @@ jobs:
 
               # 核心 KSU 配置
               echo "CONFIG_KSU=y" >> "$DEFCONFIG_PATH"
+              # 显式关闭 Tracepoint 钩子（choice 默认项，非-GKI 4.14 不兼容），选用 Manual Hook
+              echo "# CONFIG_KSU_TRACEPOINT_HOOK is not set" >> "$DEFCONFIG_PATH"
               echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$DEFCONFIG_PATH"
 
               # 自动钩子配置（4.14 在 4.2~6.8 范围内，使用自动 hook 而非手动 hook）
