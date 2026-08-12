@@ -379,6 +379,21 @@ jobs:
           ])
 
           # ============================================================
+          # kernel/module.c — 放宽 vendor 模块加载校验（关键：修复 ADSP 卡启动）
+          # sunfish 把 DSP/音频驱动作为 .ko 放在 /vendor，vermagic 绑定 stock 内核版本；
+          # 自编内核版本不同 -> stock 模块拒载 -> ADSP 起不来 -> adsprpcd 死循环 -> 卡开机动画。
+          # 让 vermagic 与 MODVERSIONS-CRC 校验永不拒绝，stock 模块即可加载（同 4.14.302，ABI 兼容）。
+          # ============================================================
+          patch_file('kernel/module.c', [
+              # vermagic 校验（check_modinfo）：加 0 && 使其永不因版本魔数不符而拒绝
+              ('} else if (!same_magic(modmagic, vermagic, info->index.vers)) {',
+               '} else if (0 && !same_magic(modmagic, vermagic, info->index.vers)) {'),
+              # MODVERSIONS 符号 CRC 校验（check_version 调用处）：加 0 && 使其永不拒绝
+              ('if (!check_version(info, name, mod, crc)) {',
+               'if (0 && !check_version(info, name, mod, crc)) {'),
+          ])
+
+          # ============================================================
           # security/selinux/ss/services.c — policy_rwlock export (强制)
           # 参考: https://resukisu.github.io/zh-Hans/guide/manual-integrate.html
           # 去掉 policy_rwlock 定义前的 static 关键字，并添加 EXPORT_SYMBOL
