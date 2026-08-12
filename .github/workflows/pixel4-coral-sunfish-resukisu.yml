@@ -77,8 +77,18 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
-          swap-storage: true
+          swap-storage: false   # 保留 runner 自带 swap（删掉反而更易 OOM）
           docker-images: true
+
+      - name: Add big swapfile (anti-OOM for LTO/link)
+        run: |
+          echo "=== 追加 16G swapfile 作为 OOM 兜底（现有 113G 磁盘）==="
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=16384
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          echo "--- swap 状态 ---"; free -h; swapon --show
 
       - name: Free disk space
         run: |
@@ -608,7 +618,16 @@ jobs:
               echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y" >> "$DEFCONFIG_PATH"
               echo "CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y" >> "$DEFCONFIG_PATH"
 
-              echo "已添加 KSU 配置到 defconfig（含自动钩子）"
+              # === 关闭 LTO：`LTO vmlinux.o` 的 ThinLTO 链接会吃爆 16GB 内存 -> runner OOM(exit 143) ===
+              # KSU root 内核无需 LTO；改用普通 ld.lld 链接，内存占用极低。CFI 依赖 LTO，一并关闭。
+              echo "# CONFIG_LTO_CLANG is not set" >> "$DEFCONFIG_PATH"
+              echo "# CONFIG_LTO_CLANG_THIN is not set" >> "$DEFCONFIG_PATH"
+              echo "# CONFIG_THINLTO is not set" >> "$DEFCONFIG_PATH"
+              echo "# CONFIG_CFI_CLANG is not set" >> "$DEFCONFIG_PATH"
+              echo "# CONFIG_CFI_PERMISSIVE is not set" >> "$DEFCONFIG_PATH"
+              echo "CONFIG_LTO_NONE=y" >> "$DEFCONFIG_PATH"
+
+              echo "已添加 KSU 配置到 defconfig（含自动钩子 + 关闭 LTO/CFI 防 OOM）"
             else
               echo "⚠ 未找到 defconfig 文件: $DEFCONFIG_NAME"
               echo "将使用 POST_DEFCONFIG_CMDS 方式启用 KSU"
