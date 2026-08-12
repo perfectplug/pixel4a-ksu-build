@@ -324,19 +324,12 @@ jobs:
                '#endif\n'
                '\terror = vfs_fstatat(dfd, filename, &stat, flag);'),
 
-              # 在 newfstat 中 cp_new_stat 之后添加钩子
-              ('error = cp_new_stat(&stat, statbuf);\n\n\treturn error;',
-               'error = cp_new_stat(&stat, statbuf);\n'
-               '#ifdef CONFIG_KSU_MANUAL_HOOK\n'
-               '\tksu_handle_newfstat_ret(&fd, &statbuf);\n'
-               '#endif\n\n\treturn error;'),
-
-              # 在 fstat64 中 cp_new_stat64 之后添加钩子 (32-bit)
-              ('error = cp_new_stat64(&stat, statbuf);\n\n\treturn error;',
-               'error = cp_new_stat64(&stat, statbuf);\n'
-               '#ifdef CONFIG_KSU_MANUAL_HOOK // for 32-bit\n'
-               '\tksu_handle_fstat64_ret(&fd, &statbuf);\n'
-               '#endif\n\n\treturn error;'),
+              # [已移除] newfstat/fstat64 的返回值 RET 钩子：
+              #   锚点 'error = cp_new_stat(&stat, statbuf);' 在 fs/stat.c 中首次出现于 newstat()
+              #   (参数是 filename 而非 fd)，replace(...,1) 会把 ksu_handle_newfstat_ret(&fd,...)
+              #   误插入 newstat -> 'use of undeclared identifier fd' 编译失败。
+              #   这两个 RET 钩子仅用于 stat 结果欺骗(隐藏)，KSU root 功能不需要，直接删除。
+              #   入口 ksu_handle_stat 钩子(下方 fstatat64 及上方 newfstatat)已足够 su 路径检测。
 
               # 在 fstatat64 中 vfs_fstatat 之前添加钩子 (32-bit)
               ('error = vfs_fstatat(dfd, filename, &stat, flag);\n\tif (error)',
