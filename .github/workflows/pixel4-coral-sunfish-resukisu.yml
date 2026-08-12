@@ -625,11 +625,24 @@ jobs:
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
           if [ $BUILD_EXIT_CODE -ne 0 ]; then
             echo "::error::内核编译失败，退出码: $BUILD_EXIT_CODE"
-            tail -100 build.log
+            echo "===================== GREPPED ERRORS (build.log) ====================="
+            grep -nE ": error:|: fatal error|Error [0-9]+$|\*\*\* |undefined reference|undefined symbol|ld\.lld|modpost|cannot find|collect2|relocation|multiple def|You lost|You should integrate" build.log | grep -viE "0 errors" | tail -80 || true
+            echo "===================== last 150 lines ====================="
+            tail -150 build.log
+            cp -f build.log /home/runner/work/build_error.log 2>/dev/null || true
             exit $BUILD_EXIT_CODE
           fi
 
           echo "=== 编译成功 ==="
+
+      - name: Upload build.log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.device }}
+          path: kernel/build.log
+          if-no-files-found: warn
+          retention-days: 5
 
       - name: Prepare artifacts
         id: prepare_artifacts
