@@ -66,21 +66,32 @@ jobs:
 
     runs-on: ubuntu-22.04
     name: "Build ${{ matrix.device_pretty }}"
+    timeout-minutes: 90   # 兜底：防止 runner 在收尾环节无限卡死占用
 
     steps:
+      - name: Maximize free disk (jlumbroso)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: true
+
       - name: Free disk space
         run: |
-          echo "=== 清理磁盘空间 ==="
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/*
-          sudo rm -rf /opt/microsoft /opt/pipx /opt/google /opt/az
+          echo "=== 清理磁盘空间（激进）==="
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/* /usr/share/swift /usr/local/share/powershell || true
+          sudo rm -rf /opt/microsoft /opt/pipx /opt/google /opt/az /usr/local/lib/node_modules || true
+          sudo rm -rf /usr/share/dotnet /usr/lib/jvm || true
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
-          sudo apt-get remove -y \
-            azure-cli google-chrome-stable firefox microsoft-edge-stable \
-            powershell temurin-*-jdk dotnet-sdk-* mono-complete \
-            2>/dev/null || true
-          df -h
+          echo "=== 磁盘可用（构建前）==="
+          df -h /
+          echo "总可用: $(df -BG --output=avail / | tail -1)"
 
       - name: Install build dependencies
         run: |
@@ -91,11 +102,8 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             pahole dpkg-dev
 
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: pixel4-${{ matrix.device }}
-          max-size: 2G
+      # [已移除 ccache]：其 Post 保存(最多2G)会在收尾环节卡死/占满磁盘，导致日志无法归档。
+      # 每次全量编译约 40 分钟，可接受，换取稳定的日志归档与磁盘余量。
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -619,17 +627,25 @@ jobs:
           echo "设备: ${{ matrix.device_pretty }}"
           echo "内核版本: 4.14"
 
+          echo "=== 磁盘/内存（编译前）==="; df -h /; free -m
+
+          # 后台磁盘/内存监控：每 45s 打一行到 stdout，若磁盘写满会立刻可见
+          ( while true; do echo "[MON $(date +%H:%M:%S)] disk_avail=$(df -BM --output=avail / | tail -1 | tr -d ' ') mem_free=$(free -m | awk '/Mem:/{print $7}')M"; sleep 45; done ) &
+          MON_PID=$!
+
           set -o pipefail
           BUILD_CONFIG="$BUILD_CONFIG" build/build.sh 2>&1 | tee build.log
-
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
+
+          kill $MON_PID 2>/dev/null || true
+          echo "=== 磁盘/内存（编译后）==="; df -h /; free -m
+
           if [ $BUILD_EXIT_CODE -ne 0 ]; then
             echo "::error::内核编译失败，退出码: $BUILD_EXIT_CODE"
             echo "===================== GREPPED ERRORS (build.log) ====================="
-            grep -nE ": error:|: fatal error|Error [0-9]+$|\*\*\* |undefined reference|undefined symbol|ld\.lld|modpost|cannot find|collect2|relocation|multiple def|You lost|You should integrate" build.log | grep -viE "0 errors" | tail -80 || true
+            grep -nE ": error:|: fatal error|Error [0-9]+$|\*\*\* |undefined reference|undefined symbol|ld\.lld|modpost|cannot find|collect2|relocation|multiple def|No space left|You lost|You should integrate" build.log | grep -viE "0 errors" | tail -80 || true
             echo "===================== last 150 lines ====================="
             tail -150 build.log
-            cp -f build.log /home/runner/work/build_error.log 2>/dev/null || true
             exit $BUILD_EXIT_CODE
           fi
 
