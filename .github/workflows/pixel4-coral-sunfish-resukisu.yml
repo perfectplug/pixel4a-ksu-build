@@ -531,6 +531,15 @@ jobs:
               print("✓ 补丁应用完成")
           PATCH_SCRIPT
 
+          # === C90 兼容：手动钩子把 ksu_handle_*() 调用插在了局部变量声明之前，
+          # 4.14 以 -Werror=declaration-after-statement 编译会失败。关闭该告警即可（仅告警，不影响真错误）。===
+          echo "=== 关闭 -Wdeclaration-after-statement（manual hook C90 混排）==="
+          sed -i 's/-Wdeclaration-after-statement/-Wno-declaration-after-statement/g' Makefile 2>/dev/null || true
+          sed -i 's/-Wdeclaration-after-statement/-Wno-declaration-after-statement/g' scripts/Makefile.extrawarn 2>/dev/null || true
+          echo "main Makefile 命中: $(grep -c 'declaration-after-statement' Makefile 2>/dev/null)"
+          # 双保险：追加 KCFLAGS，内核 Makefile 末尾 KBUILD_CFLAGS += $(KCFLAGS) 会覆盖前面的告警设置
+          grep -q 'KBUILD_CFLAGS += $(KCFLAGS)' Makefile && echo "KCFLAGS 末尾追加机制存在" || echo "(无 KCFLAGS 追加机制，依赖 Makefile sed)"
+
       - name: Enable KSU config and build kernel
         id: build_kernel
         run: |
@@ -607,6 +616,9 @@ jobs:
 
           # 设置 BUILD_AOSP_KERNEL=1 从本地源码编译（而非使用预编译 GKI 内核）
           export BUILD_AOSP_KERNEL=1
+
+          # 双保险：关闭 manual-hook 引发的 C90 声明混排告警（内核 Makefile 会把 $(KCFLAGS) 追加到 KBUILD_CFLAGS 末尾）
+          export KCFLAGS="-Wno-declaration-after-statement"
 
           # 构建内核
           echo "=== 开始编译内核 ==="
